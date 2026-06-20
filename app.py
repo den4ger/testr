@@ -19,12 +19,20 @@ def load_model_and_data():
     df_train['region_code'] = df_train['region_code'].astype(str).str.strip()
     df_eval['region_code'] = df_eval['region_code'].astype(str).str.strip()
 
+    #имена регионов
+    df_dict = pd.read_csv('regions_dict.csv')
+    df_dict['region_code'] = df_dict['region_code'].astype(str).str.strip()
+    df_dict['region_name'] = df_dict['region_name'].astype(str).str.strip()
+    region_mapping = df_dict.set_index('region_code')['region_name'].to_dict()
+
+    #модель
     model = CatBoostRegressor()
     model.load_model('cb_model.cbm')
-    return df_train, df_eval, model
 
+    return df_train, df_eval, model, region_mapping
 
-df_full_train, df_eval_clean, final_model = load_model_and_data()
+# Инициализируем данные
+df_full_train, df_eval_clean, final_model, region_map = load_model_and_data()
 TARGET_COL = 'total_demand_mil_rub'
 
 # боковое меню
@@ -44,17 +52,29 @@ if page == "Прогноз по регионам":
     st.sidebar.markdown("---")
     st.sidebar.header("Параметры региона")
 
-    # Сортировка кодов регионов для красивого списка в интерфейсе
+    # Сортировка кодов регионов для красивого списка
     all_regions = sorted(df_eval_clean['region_code'].unique(),
                          key=lambda x: int(float(str(x).replace(',', '.'))) if str(x).replace('.',
                                                                                               '').isdigit() else str(x))
-    selected_region = st.sidebar.selectbox("Выберите регион:", all_regions)
+
+
+    # Функция-форматтер для выпадающего списка
+    def format_region_label(code):
+        name = region_map.get(code, f"Регион {code}")
+        return f"{name} ({code})"
+
+
+    selected_region = st.sidebar.selectbox(
+        "Выберите регион:",
+        options=all_regions,
+        format_func=format_region_label
+    )
 
     df_region_metrics = df_eval_clean[df_eval_clean['region_code'] == selected_region].copy()
 
     # Динамический расчет локальных метрик в сайдбар
     st.sidebar.markdown("---")
-    st.sidebar.subheader(f"Точность для региона {selected_region}:")
+    st.sidebar.subheader(f"Метрики прогноза для региона:")
     if not df_region_metrics.empty:
         df_3m = df_region_metrics[df_region_metrics['month'] <= 3]
         if not df_3m.empty:
@@ -137,8 +157,7 @@ if page == "Прогноз по регионам":
         ax.axvline(x=pd.to_datetime('2025-06-01'), color='orange', linestyle=':', alpha=0.9, label='Горизонт 6 месяцев')
 
         ax.set_ylabel('Млн рублей')
-        ax.set_title(f'Прогноз совокупного денежного объема рынка недвижимости для региона {selected_region}',
-                     fontsize=12)
+        ax.set_title(f'Прогноз совокупного денежного объема рынка недвижимости для региона: {region_map.get(selected_region, selected_region)}', fontsize=12)
         ax.legend(loc='upper left')
         ax.grid(True, alpha=0.15)
 
